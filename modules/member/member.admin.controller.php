@@ -61,6 +61,9 @@ class memberAdminController extends member
 		unset($all_args->success_return_url);
 		unset($all_args->ruleset);
 		if(!isset($args->limit_date)) $args->limit_date = "";
+		unset($all_args->password);
+		unset($all_args->password2);
+		unset($all_args->reset_password);
 		// Add extra vars after excluding necessary information from all the requested arguments
 		$extra_vars = delObjectVars($all_args, $args);
 		$args->extra_vars = serialize($extra_vars);
@@ -77,13 +80,12 @@ class memberAdminController extends member
 		}
 
 		// remove whitespace
-		$checkInfos = array('user_id', 'nick_name', 'email_address');
-		$replaceStr = array("\r\n", "\r", "\n", " ", "\t", "\xC2\xAD");
+		$checkInfos = array('user_id', 'user_name', 'nick_name', 'email_address');
 		foreach($checkInfos as $val)
 		{
 			if(isset($args->{$val}))
 			{
-				$args->{$val} = str_replace($replaceStr, '', $args->{$val});
+				$args->{$val} = preg_replace('/[\pZ\pC]+/u', '', $args->{$val});
 			}
 		}
 
@@ -156,8 +158,31 @@ class memberAdminController extends member
 			'enable_confirm',
 			'webmaster_name',
 			'webmaster_email',
-			'password_strength'
+			'password_strength',
+			'password_hashing_algorithm',
+			'password_hashing_work_factor',
+			'password_hashing_auto_upgrade'
 		);
+		
+		$oPassword = new Password();
+		if(!array_key_exists($args->password_hashing_algorithm, $oPassword->getSupportedAlgorithms()))
+		{
+			$args->password_hashing_algorithm = 'md5';
+		}
+		
+		$args->password_hashing_work_factor = intval($args->password_hashing_work_factor, 10);
+		if($args->password_hashing_work_factor < 4)
+		{
+			$args->password_hashing_work_factor = 4;
+		}
+		if($args->password_hashing_work_factor > 16)
+		{
+			$args->password_hashing_work_factor = 16;
+		}
+		if($args->password_hashing_auto_upgrade != 'Y')
+		{
+			$args->password_hashing_auto_upgrade = 'N';
+		}
 
 		if((!$args->webmaster_name || !$args->webmaster_email) && $args->enable_confirm == 'Y')
 		{
@@ -181,6 +206,7 @@ class memberAdminController extends member
 
 		$args = Context::gets(
 			'limit_day',
+			'limit_day_description',
 			'agreement',
 			'redirect_url',
 			'profile_image', 'profile_image_max_width', 'profile_image_max_height',
@@ -471,7 +497,7 @@ class memberAdminController extends member
 				}
 				else if($formInfo->name == 'password')
 				{
-					$fields[] = '<field name="password"><if test="$act == \'procMemberInsert\'" attr="required" value="true" /><if test="$act == \'procMemberInsert\'" attr="length" value="6:20" /></field>';
+					$fields[] = '<field name="password"><if test="$act == \'procMemberInsert\'" attr="required" value="true" /><if test="$act == \'procMemberInsert\'" attr="length" value="4:20" /></field>';
 					$fields[] = '<field name="password2"><if test="$act == \'procMemberInsert\'" attr="required" value="true" /><if test="$act == \'procMemberInsert\'" attr="equalto" value="password" /></field>';
 				}
 				else if($formInfo->name == 'find_account_question')
@@ -827,7 +853,6 @@ class memberAdminController extends member
 						{
 							$args->denied = $var->denied;
 							$output = executeQuery('member.updateMemberDeniedInfo', $args);
-							$this->_clearMemberCache($args->member_srl);
 							if(!$output->toBool())
 							{
 								$oDB->rollback();
@@ -849,6 +874,7 @@ class memberAdminController extends member
 						$this->setMessage('success_deleted');
 					}
 			}
+			$oMemberController->_clearMemberCache($args->member_srl);
 		}
 
 		$message = $var->message;
@@ -1087,7 +1113,7 @@ class memberAdminController extends member
 	}
 
 	/**
-	 * find_account_answerInsert a group
+	 * Insert a group
 	 * @param object $args
 	 * @return Object
 	 */
@@ -1105,7 +1131,13 @@ class memberAdminController extends member
 			if(!$output->toBool()) return $output;
 		}
 
+		if(!isset($args->list_order) || $args->list_order=='')
+		{
+			$args->list_order = $args->group_srl;
+		}
+
 		if(!$args->group_srl) $args->group_srl = getNextSequence();
+		$args->list_order = $args->group_srl;
 		$output = executeQuery('member.insertGroup', $args);
 		$this->_deleteMemberGroupCache($args->site_srl);
 

@@ -40,7 +40,7 @@ class boardController extends board
 		$obj->commentStatus = $obj->comment_status;
 
 		settype($obj->title, "string");
-		if($obj->title == '') $obj->title = cut_str(strip_tags($obj->content),20,'...');
+		if($obj->title == '') $obj->title = cut_str(trim(strip_tags(nl2br($obj->content))),20,'...');
 		//setup dpcument title tp 'Untitled'
 		if($obj->title == '') $obj->title = 'Untitled';
 
@@ -60,28 +60,56 @@ class boardController extends board
 		// check if the document is existed
 		$oDocument = $oDocumentModel->getDocument($obj->document_srl, $this->grant->manager);
 
+		// update the document if it is existed
+		$is_update = false;
+		if($oDocument->isExists() && $oDocument->document_srl == $obj->document_srl)
+		{
+			$is_update = true;
+		}
+
 		// if use anonymous is true
 		if($this->module_info->use_anonymous == 'Y')
 		{
 			$this->module_info->admin_mail = '';
 			$obj->notify_message = 'N';
-			$obj->member_srl = -1*$logged_info->member_srl;
+			if($is_update===false)
+			{
+				$obj->member_srl = -1*$logged_info->member_srl;
+			}
 			$obj->email_address = $obj->homepage = $obj->user_id = '';
 			$obj->user_name = $obj->nick_name = 'anonymous';
 			$bAnonymous = true;
-			$oDocument->add('member_srl', $obj->member_srl);
+			if($is_update===false)
+			{
+				$oDocument->add('member_srl', $obj->member_srl);
+			}
 		}
 		else
 		{
 			$bAnonymous = false;
 		}
 
+		if($obj->is_secret == 'Y' || strtoupper($obj->status == 'SECRET'))
+		{
+			$use_status = explode('|@|', $this->module_info->use_status);
+			if(!is_array($use_status) || !in_array('SECRET', $use_status))
+			{
+				unset($obj->is_secret);
+				$obj->status = 'PUBLIC';
+			}
+		}
+
 		// update the document if it is existed
-		if($oDocument->isExists() && $oDocument->document_srl == $obj->document_srl)
+		if($is_update)
 		{
 			if(!$oDocument->isGranted())
 			{
 				return new Object(-1,'msg_not_permitted');
+			}
+
+			if($this->module_info->use_anonymous == 'Y') {
+				$obj->member_srl = abs($oDocument->get('member_srl')) * -1;
+				$oDocument->add('member_srl', $obj->member_srl);
 			}
 
 			if($this->module_info->protect_content=="Y" && $oDocument->get('comment_count')>0 && $this->grant->manager==false)
@@ -104,7 +132,7 @@ class boardController extends board
 				$obj->update_order = $obj->list_order = (getNextSequence() * -1);
 			}
 
-			$output = $oDocumentController->updateDocument($oDocument, $obj);
+			$output = $oDocumentController->updateDocument($oDocument, $obj, true);
 			$msg_code = 'success_updated';
 
 		// insert a new document otherwise
@@ -143,7 +171,10 @@ class boardController extends board
 		$this->add('document_srl', $output->get('document_srl'));
 
 		// alert a message
-		$this->setMessage($msg_code);
+		if(Context::get('xeVirtualRequestMethod') !== 'xml')
+		{
+			$this->setMessage($msg_code);
+		}
 	}
 
 	/**
@@ -179,9 +210,13 @@ class boardController extends board
 		}
 
 		// alert an message
+		$this->setRedirectUrl(getNotEncodedUrl('', 'mid', Context::get('mid'), 'act', '', 'page', Context::get('page'), 'document_srl', ''));
 		$this->add('mid', Context::get('mid'));
-		$this->add('page', $output->get('page'));
-		$this->setMessage('success_deleted');
+		$this->add('page', Context::get('page'));
+		if(Context::get('xeVirtualRequestMethod') !== 'xml')
+		{
+			$this->setMessage('success_deleted');
+		}
 	}
 
 	/**
@@ -303,7 +338,10 @@ class boardController extends board
 			return $output;
 		}
 
-		$this->setMessage('success_registed');
+		if(Context::get('xeVirtualRequestMethod') !== 'xml')
+		{
+			$this->setMessage('success_registed');
+		}
 		$this->add('mid', Context::get('mid'));
 		$this->add('document_srl', $obj->document_srl);
 		$this->add('comment_srl', $obj->comment_srl);
@@ -333,7 +371,10 @@ class boardController extends board
 		$this->add('mid', Context::get('mid'));
 		$this->add('page', Context::get('page'));
 		$this->add('document_srl', $output->get('document_srl'));
-		$this->setMessage('success_deleted');
+		if(Context::get('xeVirtualRequestMethod') !== 'xml')
+		{
+			$this->setMessage('success_deleted');
+		}
 	}
 
 	/**
@@ -357,7 +398,10 @@ class boardController extends board
 		$this->add('mid', Context::get('mid'));
 		$this->add('page', Context::get('page'));
 		$this->add('document_srl', $output->get('document_srl'));
-		$this->setMessage('success_deleted');
+		if(Context::get('xeVirtualRequestMethod') !== 'xml')
+		{
+			$this->setMessage('success_deleted');
+		}
 	}
 
 	/**

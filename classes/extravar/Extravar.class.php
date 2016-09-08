@@ -225,6 +225,11 @@ class ExtraItem
 					$values = explode(',', $value);
 				}
 
+				$values = array_values($values);
+				for($i = 0, $c = count($values); $i < $c; $i++)
+				{
+					$values[$i] = trim(htmlspecialchars($values[$i], ENT_COMPAT | ENT_HTML401, 'UTF-8', false));
+				}
 				return $values;
 
 			case 'checkbox' :
@@ -247,11 +252,11 @@ class ExtraItem
 					$values = array($value);
 				}
 
+				$values = array_values($values);
 				for($i = 0, $c = count($values); $i < $c; $i++)
 				{
-					$values[$i] = htmlspecialchars($values[$i], ENT_COMPAT | ENT_HTML401, 'UTF-8', false);
+					$values[$i] = trim(htmlspecialchars($values[$i], ENT_COMPAT | ENT_HTML401, 'UTF-8', false));
 				}
-
 				return $values;
 
 			case 'kr_zip' :
@@ -263,15 +268,16 @@ class ExtraItem
 				{
 					$values = explode('|@|', $value);
 				}
-				elseif(strpos($value, ',') !== false)
-				{
-					$values = explode(',', $value);
-				}
 				else
 				{
 					$values = array($value);
 				}
 
+				$values = array_values($values);
+				for($i = 0, $c = count($values); $i < $c; $i++)
+				{
+					$values[$i] = trim(htmlspecialchars($values[$i], ENT_COMPAT | ENT_HTML401, 'UTF-8', false));
+				}
 				return $values;
 
 			//case 'date' :
@@ -281,6 +287,16 @@ class ExtraItem
 			default :
 				return htmlspecialchars($value, ENT_COMPAT | ENT_HTML401, 'UTF-8', false);
 		}
+	}
+
+	/**
+	 * Returns a value for HTML
+	 *
+	 * @return string Returns a value expressed in HTML.
+	 */
+	function getValue()
+	{	
+		return $this->_getTypeValue($this->type, $this->value);
 	}
 
 	/**
@@ -301,26 +317,20 @@ class ExtraItem
 				return ($value) ? sprintf('<a href="mailto:%s">%s</a>', $value, $value) : "";
 
 			case 'tel' :
-				return sprintf('%s - %s - %s', $value[0], $value[1], $value[2]);
+				return sprintf('%s-%s-%s', $value[0], $value[1], $value[2]);
 				
 			case 'textarea' :
 				return nl2br($value);
 				
-			case 'checkbox' :
-				if(is_array($value))
-				{
-					return implode(', ', $value);
-				}
-				return $value;
-				
 			case 'date' :
 				return zdate($value, "Y-m-d");
 
+			case 'checkbox' :
 			case 'select' :
 			case 'radio' :
 				if(is_array($value))
 				{
-					return implode(', ', $value);
+					return implode(',', $value);
 				}
 				return $value;
 
@@ -430,7 +440,8 @@ class ExtraItem
 				Context::loadJavascriptPlugin('ui.datepicker');
 
 				$buff[] = '<input type="hidden" name="' . $column_name . '" value="' . $value . '" />'; 
-				$buff[] =	'<input type="text" id="date_' . $column_name . '" value="' . zdate($value, 'Y-m-d') . '" class="date" /> <input type="button" value="' . Context::getLang('cmd_delete') . '" id="dateRemover_' . $column_name . '" />';
+				$buff[] =	'<input type="text" id="date_' . $column_name . '" value="' . zdate($value, 'Y-m-d') . '" class="date" />';
+				$buff[] =	'<input type="button" value="' . Context::getLang('cmd_delete') . '" class="btn" id="dateRemover_' . $column_name . '" />';
 				$buff[] =	'<script type="text/javascript">';
 				$buff[] = '//<![CDATA[';
 				$buff[] =	'(function($){';
@@ -462,6 +473,8 @@ class ExtraItem
 		}
 		if($this->desc)
 		{
+			$oModuleController = getController('module');
+			$oModuleController->replaceDefinedLangCode($this->desc);
 			$buff[] = '<p>' . htmlspecialchars($this->desc, ENT_COMPAT | ENT_HTML401, 'UTF-8', false) . '</p>';
 		}
 		

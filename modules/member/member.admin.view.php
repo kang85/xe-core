@@ -129,8 +129,10 @@ class memberAdminView extends member
 	 */
 	public function dispMemberAdminConfig()
 	{
+		$oPassword = new Password();
+		Context::set('password_hashing_algos', $oPassword->getSupportedAlgorithms());
+		
 		$this->setTemplateFile('default_config');
-
 	}
 
 	public function dispMemberAdminSignUpConfig()
@@ -157,6 +159,7 @@ class memberAdminView extends member
 
 		// get an editor
 		$option = new stdClass();
+		$option->skin = $oEditorModel->getEditorConfig()->editor_skin;
 		$option->primary_key_name = 'temp_srl';
 		$option->content_key_name = 'agreement';
 		$option->allow_fileupload = false;
@@ -257,6 +260,7 @@ class memberAdminView extends member
 		Context::set('editor_skin_list', $oEditorModel->getEditorSkinList());
 
 		// get an editor
+		$option->skin = $oEditorModel->getEditorConfig()->editor_skin;
 		$option->primary_key_name = 'temp_srl';
 		$option->content_key_name = 'agreement';
 		$option->allow_fileupload = false;
@@ -350,6 +354,7 @@ class memberAdminView extends member
 		{
 			$oEditorModel = getModel('editor');
 			$option = new stdClass();
+			$option->skin = $oEditorModel->getEditorConfig()->editor_skin;
 			$option->primary_key_name = 'member_srl';
 			$option->content_key_name = 'signature';
 			$option->allow_fileupload = false;
@@ -538,7 +543,7 @@ class memberAdminView extends member
 						$extentionReplace = array('tel_0' => $extendForm->value[0],
 							'tel_1' => $extendForm->value[1],
 							'tel_2' => $extendForm->value[2]);
-						$template = '<input type="tel" name="%column_name%[]" id="%column_name%" value="%tel_0%" size="4" maxlength="4" style="width:30px" title="First Number" /> - <input type="tel" name="%column_name%[]" value="%tel_1%" size="4" maxlength="4" style="width:30px" title="Second Number" /> - <input type="tel" name="%column_name%[]" value="%tel_2%" size="4" maxlength="4" style="width:30px" title="Third Number" />';
+						$template = '<input type="tel" name="%column_name%[]" id="%column_name%" value="%tel_0%" size="4" maxlength="4" style="width:30px" title="First Number" /> - <input type="tel" name="%column_name%[]" value="%tel_1%" size="4" maxlength="4" style="width:35px" title="Second Number" /> - <input type="tel" name="%column_name%[]" value="%tel_2%" size="4" maxlength="4" style="width:35px" title="Third Number" />';
 					}
 					else if($extendForm->column_type == 'textarea')
 					{
@@ -582,6 +587,7 @@ class memberAdminView extends member
 					{
 						$template = '<select name="'.$formInfo->name.'" id="'.$formInfo->name.'">%s</select>';
 						$optionTag = array();
+						$optionTag[] = sprintf('<option value="">%s</option>', $lang->cmd_select);
 						if($extendForm->default_value)
 						{
 							foreach($extendForm->default_value as $v)
@@ -612,7 +618,7 @@ class memberAdminView extends member
 					}
 
 					$replace = array_merge($extentionReplace, $replace);
-					$inputTag = preg_replace('@%(\w+)%@e', '$replace[$1]', $template);
+					$inputTag = preg_replace_callback('@%(\w+)%@', function($n) use($replace) { return $replace[$n[1]]; }, $template);
 
 					if($extendForm->description)
 						$inputTag .= '<p class="help-block">'.$extendForm->description.'</p>';

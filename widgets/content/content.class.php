@@ -34,6 +34,8 @@ class content extends WidgetHandler
 		if(!$args->subject_cut_size) $args->subject_cut_size = 0;
 		// Cut the length of contents
 		if(!$args->content_cut_size) $args->content_cut_size = 100;
+		// Cut the length of nickname
+		if(!$args->nickname_cut_size) $args->nickname_cut_size = 0;
 		// Display time of the latest post
 		if(!$args->duration_new) $args->duration_new = 12;
 		// How to create thumbnails
@@ -715,6 +717,7 @@ class content extends WidgetHandler
 		$widget_info->page_count = $args->page_count;
 		$widget_info->subject_cut_size = $args->subject_cut_size;
 		$widget_info->content_cut_size = $args->content_cut_size;
+		$widget_info->nickname_cut_size = $args->nickname_cut_size;
 		$widget_info->new_window = $args->new_window;
 
 		$widget_info->duration_new = $args->duration_new * 60*60;
@@ -743,6 +746,7 @@ class content extends WidgetHandler
 				if(!is_array($content_items[$module_srl]) || !count($content_items[$module_srl])) continue;
 
 				unset($tab_item);
+				$tab_item = new stdClass();
 				$tab_item->title = $content_items[$module_srl][0]->getBrowserTitle();
 				$tab_item->content_items = $content_items[$module_srl];
 				$tab_item->domain = $content_items[$module_srl][0]->getDomain();
@@ -807,37 +811,36 @@ class contentItem extends Object
 	}
 	function setLink($url)
 	{
-		$this->add('url',$url);
+		$this->add('url', strip_tags($url));
 	}
 	function setTitle($title)
 	{
-		$this->add('title',$title);
+		$this->add('title', strip_tags($title));
 	}
-
 	function setThumbnail($thumbnail)
 	{
-		$this->add('thumbnail',$thumbnail);
+		$this->add('thumbnail', $thumbnail);
 	}
 	function setContent($content)
 	{
-		$this->add('content',$content);
+		$this->add('content', removeHackTag($content));
 	}
 	function setRegdate($regdate)
 	{
-		$this->add('regdate',$regdate);
+		$this->add('regdate', strip_tags($regdate));
 	}
 	function setNickName($nick_name)
 	{
-		$this->add('nick_name',$nick_name);
+		$this->add('nick_name', strip_tags($nick_name));
 	}
 	// Save author's homepage url. By misol
 	function setAuthorSite($site_url)
 	{
-		$this->add('author_site',$site_url);
+		$this->add('author_site', strip_tags($site_url));
 	}
 	function setCategory($category)
 	{
-		$this->add('category',$category);
+		$this->add('category', strip_tags($category));
 	}
 	function getBrowserTitle()
 	{
@@ -887,9 +890,12 @@ class contentItem extends Object
 	{
 		return $this->get('category');
 	}
-	function getNickName()
+	function getNickName($cut_size = 0, $tail='...')
 	{
-		return $this->get('nick_name');
+		if($cut_size) $nick_name = cut_str($this->get('nick_name'), $cut_size, $tail);
+		else $nick_name = $this->get('nick_name');
+
+		return $nick_name;
 	}
 	function getAuthorSite()
 	{

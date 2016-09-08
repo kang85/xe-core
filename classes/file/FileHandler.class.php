@@ -138,7 +138,7 @@ class FileHandler
 	 * Write $buff into the specified file
 	 *
 	 * @param string $filename Path of target file
-	 * @param string $buff Content to be writeen
+	 * @param string $buff Content to be written
 	 * @param string $mode a(append) / w(write)
 	 * @return void
 	 */
@@ -510,29 +510,77 @@ class FileHandler
 	 * @param int $timeout Connection timeout
 	 * @param string $method GET/POST
 	 * @param string $content_type Content type header of HTTP request
-	 * @param string[] $headers Headers key vaule array.
+	 * @param string[] $headers Headers key value array.
 	 * @param string[] $cookies Cookies key value array.
 	 * @param string $post_data Request arguments array for POST method
 	 * @return string If success, the content of the target file. Otherwise: none
 	 */
-	function getRemoteResource($url, $body = null, $timeout = 3, $method = 'GET', $content_type = null, $headers = array(), $cookies = array(), $post_data = array())
+	function getRemoteResource($url, $body = null, $timeout = 3, $method = 'GET', $content_type = null, $headers = array(), $cookies = array(), $post_data = array(), $request_config = array())
 	{
+		require_once(_XE_PATH_ . 'libs/idna_convert/idna_convert.class.php');
+		$IDN = new idna_convert(array('idn_version' => 2008));
+		$url = $IDN->encode($url);
+
 		try
 		{
 			requirePear();
 			require_once('HTTP/Request.php');
 
 			$parsed_url = parse_url(__PROXY_SERVER__);
-			if($parsed_url["host"])
+			if($parsed_url["host"] && $parsed_url["path"])
 			{
+				// Old style proxy server support (POST payload to proxy script)
 				$oRequest = new HTTP_Request(__PROXY_SERVER__);
 				$oRequest->setMethod('POST');
-				$oRequest->_timeout = $timeout;
 				$oRequest->addPostData('arg', serialize(array('Destination' => $url, 'method' => $method, 'body' => $body, 'content_type' => $content_type, "headers" => $headers, "post_data" => $post_data)));
 			}
 			else
 			{
 				$oRequest = new HTTP_Request($url);
+
+				// New style proxy server support (Use HTTP_Request2 native config format)
+				if($parsed_url['host'])
+				{
+					$request_config['proxy_host'] = $parsed_url['host'];
+					$request_config['proxy_port'] = $parsed_url['port'] ? $parsed_url['port'] : '';
+					$request_config['proxy_user'] = rawurldecode($parsed_url['user'] ? $parsed_url['user'] : '');
+					$request_config['proxy_password'] = rawurldecode($parsed_url['pass'] ? $parsed_url['pass'] : '');
+					$request_config['proxy_type'] = $parsed_url['scheme'] ? $parsed_url['scheme'] : 'http';
+				}
+
+				if(count($request_config) && method_exists($oRequest, 'setConfig'))
+				{
+					foreach($request_config as $key=>$val)
+					{
+						if($key === 'observers')
+						{
+							foreach($val as $observer)
+							{
+								$oRequest->attach($observer);
+							}
+						}
+						else
+						{
+							$oRequest->setConfig($key, $val);
+						}
+					}
+				}
+				if(method_exists($oRequest, 'setConfig'))
+				{
+					if(extension_loaded('curl'))
+					{
+						$oRequest->setConfig('adapter', 'curl');
+					}
+					elseif(version_compare(PHP_VERSION, '5.6', '<'))
+					{
+						$oRequest->setConfig('ssl_verify_host', false);
+					}
+					if(file_exists(_XE_PATH_ . 'libs/cacert/cacert.pem'))
+					{
+						$oRequest->setConfig('ssl_cafile', _XE_PATH_ . 'libs/cacert/cacert.pem');
+					}
+				}
+
 				if(count($headers) > 0)
 				{
 					foreach($headers as $key => $val)
@@ -540,6 +588,7 @@ class FileHandler
 						$oRequest->addHeader($key, $val);
 					}
 				}
+				$host = parse_url($url, PHP_URL_HOST);
 				if($cookies[$host])
 				{
 					foreach($cookies[$host] as $key => $val)
@@ -561,7 +610,14 @@ class FileHandler
 				$oRequest->setMethod($method);
 				if($body)
 					$oRequest->setBody($body);
-
+			}
+			
+			if(method_exists($oRequest, 'setConfig'))
+			{
+				$oRequest->setConfig('timeout', $timeout);
+			}
+			elseif(property_exists($oRequest, '_timeout'))
+			{
 				$oRequest->_timeout = $timeout;
 			}
 
@@ -584,9 +640,18 @@ class FileHandler
 			}
 
 			if($code != 200)
+			{
 				return;
+			}
 
-			return $response;
+			if(isset($request_config['store_body']) && !$request_config['store_body'])
+			{
+				return TRUE;
+			}
+			else
+			{
+				return $response;
+			}
 		}
 		catch(Exception $e)
 		{
@@ -603,18 +668,28 @@ class FileHandler
 	 * @param string $timeout Connection timeout
 	 * @param string $method GET/POST
 	 * @param string $content_type Content type header of HTTP request
-	 * @param string[] $headers Headers key vaule array.
+	 * @param string[] $headers Headers key value array.
 	 * @return bool TRUE: success, FALSE: failed
 	 */
-	function getRemoteFile($url, $target_filename, $body = null, $timeout = 3, $method = 'GET', $content_type = null, $headers = array())
+	function getRemoteFile($url, $target_filename, $body = null, $timeout = 3, $method = 'GET', $content_type = null, $headers = array(), $cookies = array(), $post_data = array(), $request_config = array())
 	{
-		if(!($body = self::getRemoteResource($url, $body, $timeout, $method, $content_type, $headers)))
+		$target_filename = self::getRealPath($target_filename);
+		self::writeFile($target_filename, '');
+		
+		requirePear();
+		require_once('HTTP/Request2/Observer/Download.php');
+		
+		$request_config['store_body'] = false;
+		$request_config['observers'][] = new HTTP_Request2_Observer_Download($target_filename);
+		try
+		{
+			$result = self::getRemoteResource($url, $body, $timeout, $method, $content_type, $headers, $cookies, $post_data, $request_config);
+		}
+		catch(Exception $e)
 		{
 			return FALSE;
 		}
-
-		self::writeFile($target_filename, $body);
-		return TRUE;
+		return $result ? TRUE : FALSE;
 	}
 
 	/**
@@ -626,21 +701,17 @@ class FileHandler
 	 */
 	function returnBytes($val)
 	{
-		$last = strtolower(substr(trim($val), -1));
-		switch ($last)
+		$unit = strtoupper(substr($val, -1));
+		$val = (float)$val;
+
+		switch ($unit)
 		{
-			case 'g':
-				$val *= 1024 * 1024 * 1024;
-				break;
-			case 'm':
-				$val *= 1024 * 1024;
-				break;
-			case 'k':
-				$val *= 1024;
-				break;
+			case 'G': $val *= 1024;
+			case 'M': $val *= 1024;
+			case 'K': $val *= 1024;
 		}
 
-		return (int) $val;
+		return round($val);
 	}
 
 	/**
@@ -1007,6 +1078,33 @@ class FileHandler
 	{
 		$path = self::getRealPath($path);
 		return is_dir($path) ? $path : FALSE;
+	}
+
+	/**
+	 * Check is writable dir
+	 *
+	 * @param string $path Target dir path
+	 * @return bool
+	 */
+	function isWritableDir($path)
+	{
+		$path = self::getRealPath($path);
+		if(is_dir($path)==FALSE)
+		{
+			return FALSE;
+		}
+
+		$checkFile = $path . '/_CheckWritableDir';
+
+		$fp = fopen($checkFile, 'w');
+		if(!is_resource($fp))
+		{
+			return FALSE;
+		}
+		fclose($fp);
+
+		self::removeFile($checkFile);
+		return TRUE;
 	}
 }
 

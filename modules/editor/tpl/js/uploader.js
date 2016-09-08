@@ -49,7 +49,7 @@ var uploadAutosaveChecker = false;
 
 		settings = {
 			flash_url   : request_uri + 'modules/editor/tpl/images/SWFUpload.swf',
-			upload_url  : request_uri.replace(/^https/i, 'http')+'index.php',
+			upload_url  : request_uri + 'index.php',
 			post_params : {
 				mid : current_mid,
 				act : 'procFileUpload',
@@ -115,7 +115,8 @@ var uploadAutosaveChecker = false;
 		}
 
 		if(is_def(window.xeVid)) settings.post_params.vid = xeVid;
-		settings.post_params[cfg.sessionName] = getCookie(cfg.sessionName);
+		settings.sessionName = cfg.sessionName;
+		if(getCookie(cfg.sessionName)) settings.post_params[cfg.sessionName] = getCookie(cfg.sessionName);
 
 		uploaderSettings[seq] = settings;
 
@@ -166,6 +167,7 @@ var uploadAutosaveChecker = false;
 		},
 		onFileDialogComplete : function(numFilesSelected, numFilesQueued) {
 			try {
+				if(getCookie(this.settings.sessionName)) this.addPostParam(this.settings.sessionName, getCookie(this.settings.sessionName));
 				this.startUpload();
 			} catch (e)  {
 				this.debug(e);
@@ -173,6 +175,7 @@ var uploadAutosaveChecker = false;
 		},
 		onUploadStart : _true,
 		onUploadProgress : function(file, bytesLoaded, bytesTotal) {
+			if(getCookie(this.settings.sessionName)) this.addPostParam(this.settings.sessionName, getCookie(this.settings.sessionName));
 			try {
 				var $list, $lastopt, percent, filename;
 
@@ -333,7 +336,7 @@ function previewFiles(event, file_srl) {
 	var $opt, $select, $preview, fileinfo, filename, match, html, $=jQuery;
 
 	if(!file_srl) {
-		$opt = $(event.target).parent().andSelf().filter('select').find('>option:selected');
+		$opt = $(event.target).parent().addBack().filter('select').find('>option:selected');
 		if(!$opt.length) return;
 
 		file_srl = $opt.attr('value');
@@ -422,7 +425,7 @@ function insertUploadedFile(editorSequence) {
 				temp_code = '';
 				temp_code += "<img src=\""+file.download_url+"\" alt=\""+file.source_filename+"\"";
 				if(obj.complete === true) { temp_code += " width=\""+obj.width+"\" height=\""+obj.height+"\""; }
-				temp_code += " />\r\n";
+				temp_code += " />\r\n<p><br /></p>\r\n";
 				text.push(temp_code);
 			} else {
 				// 이미지외의 경우는 multimedia_link 컴포넌트 연결

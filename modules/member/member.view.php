@@ -119,7 +119,7 @@ class memberView extends member
 				continue;
 			}
 
-			if($memberInfo->member_srl != $logged_info->member_srl && $formInfo->isPublic != 'Y')
+			if($logged_info->is_admin != 'Y' && $memberInfo->member_srl != $logged_info->member_srl && $formInfo->isPublic != 'Y')
 			{
 				continue;
 			}
@@ -343,6 +343,9 @@ class memberView extends member
 		$oDocumentAdminView = getAdminView('document');
 		$oDocumentAdminView->dispDocumentAdminList();
 
+		$oSecurity = new Security();
+		$oSecurity->encodeHTML('document_list...title', 'search_target', 'search_keyword');
+
 		Context::set('module_srl', $module_srl);
 		$this->setTemplateFile('document_list');
 	}
@@ -415,8 +418,17 @@ class memberView extends member
 		$config = $this->member_config;
 		Context::set('identifier', $config->identifier);
 
+		$XE_VALIDATOR_MESSAGE = Context::get('XE_VALIDATOR_MESSAGE');
+		$XE_VALIDATOR_ERROR = Context::get('XE_VALIDATOR_ERROR');
+		if($XE_VALIDATOR_ERROR == -11)
+			Context::set('XE_VALIDATOR_MESSAGE', $XE_VALIDATOR_MESSAGE . $config->limit_day_description);
+
+		if($XE_VALIDATOR_ERROR < -10 && $XE_VALIDATOR_ERROR > -21)
+			Context::set('referer_url', getUrl('')); 
+		else
+			Context::set('referer_url', htmlspecialchars($_SERVER['HTTP_REFERER'], ENT_COMPAT | ENT_HTML401, 'UTF-8', false));
+
 		// Set a template file
-		Context::set('referer_url', htmlspecialchars($_SERVER['HTTP_REFERER'], ENT_COMPAT | ENT_HTML401, 'UTF-8', false));
 		$this->setTemplateFile('login_form');
 	}
 
@@ -569,7 +581,14 @@ class memberView extends member
 
 	function dispMemberModifyEmailAddress()
 	{
-		if(!Context::get('is_logged')) return $this->stop('msg_not_logged');
+		if($_SESSION['rechecked_password_step'] != 'VALIDATE_PASSWORD' && $_SESSION['rechecked_password_step'] != 'INPUT_DATA')
+		{
+			Context::set('success_return_url', getUrl('', 'mid', Context::get('mid'), 'act', 'dispMemberModifyEmailAddress'));
+			$this->dispMemberModifyInfoBefore();
+			return;
+		}
+
+		$_SESSION['rechecked_password_step'] = 'INPUT_DATA';
 
 		$this->setTemplateFile('modify_email_address');
 	}

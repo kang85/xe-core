@@ -123,6 +123,7 @@ class layoutAdminController extends layout
 				{
 					$oModuleModel = getModel('module');
 					$start_module = $oModuleModel->getSiteInfo(0, $columnList);
+					$tmpArgs = new stdClass;
 					$tmpArgs->url = $start_module->mid;
 					$tmpArgs->site_srl = 0;
 					$output = executeQuery('menu.getMenuItemByUrl', $tmpArgs);
@@ -262,15 +263,8 @@ class layoutAdminController extends layout
 			$oLayoutModel = getModel('layout');
 			$cache_file = $oLayoutModel->getUserLayoutCache($args->layout_srl, Context::getLangType());
 			FileHandler::removeFile($cache_file);
-			//remove from cache
-			$oCacheHandler = CacheHandler::getInstance('object', null, true);
-			if($oCacheHandler->isSupport())
-			{
-				$object_key = 'layout:' . $args->layout_srl;
-				$cache_key = $oCacheHandler->getGroupKey('site_and_module', $object_key);
-				$oCacheHandler->delete($cache_key);
-			}
 		}
+
 		return $output;
 	}
 
@@ -295,7 +289,7 @@ class layoutAdminController extends layout
 	{
 		$oLayoutModel = getModel('layout');
 
-		if(!$force)
+		if($force)
 		{
 			$layoutInfo = $oLayoutModel->getLayout($layout_srl);
 			if($layoutInfo)
@@ -336,14 +330,7 @@ class layoutAdminController extends layout
 		$args = new stdClass();
 		$args->layout_srl = $layout_srl;
 		$output = executeQuery("layout.deleteLayout", $args);
-		//remove from cache
-		$oCacheHandler = CacheHandler::getInstance('object', null, true);
-		if($oCacheHandler->isSupport())
-		{
-			$object_key = 'layout:'.$layout_srl;
-			$cache_key = $oCacheHandler->getGroupKey('site_and_module', $object_key);
-			$oCacheHandler->delete($cache_key);
-		}
+
 		if(!$output->toBool()) return $output;
 
 		return new Object(0,'success_deleted');

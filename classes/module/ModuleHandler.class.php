@@ -45,8 +45,12 @@ class ModuleHandler extends Handler
 		$oContext = Context::getInstance();
 		if($oContext->isSuccessInit == FALSE)
 		{
-			$this->error = 'msg_invalid_request';
-			return;
+			$logged_info = Context::get('logged_info');
+			if($logged_info->is_admin != "Y")
+			{
+				$this->error = 'msg_invalid_request';
+				return;
+			}
 		}
 
 		// Set variables from request arguments
@@ -55,7 +59,10 @@ class ModuleHandler extends Handler
 		$this->mid = $mid ? $mid : Context::get('mid');
 		$this->document_srl = $document_srl ? (int) $document_srl : (int) Context::get('document_srl');
 		$this->module_srl = $module_srl ? (int) $module_srl : (int) Context::get('module_srl');
-		$this->entry = Context::convertEncodingStr(Context::get('entry'));
+        if($entry = Context::get('entry'))
+        {
+            $this->entry = Context::convertEncodingStr($entry);
+        }
 
 		// Validate variables to prevent XSS
 		$isInvalid = NULL;
@@ -84,7 +91,11 @@ class ModuleHandler extends Handler
 		{
 			if(Context::get('_use_ssl') == 'optional' && Context::isExistsSSLAction($this->act) && $_SERVER['HTTPS'] != 'on')
 			{
-				header('location:https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
+				if(Context::get('_https_port')!=null) {
+					header('location:https://' . $_SERVER['HTTP_HOST'] . ':' . Context::get('_https_port') . $_SERVER['REQUEST_URI']);
+				} else {
+					header('location:https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']);
+				}
 				return;
 			}
 		}
@@ -105,7 +116,6 @@ class ModuleHandler extends Handler
 	 * */
 	function init()
 	{
-		
 		$oModuleModel = getModel('module');
 		$site_module_info = Context::get('site_module_info');
 
@@ -161,7 +171,7 @@ class ModuleHandler extends Handler
 					if(Context::getRequestMethod() == 'GET')
 					{
 						$this->mid = $module_info->mid;
-						header('location:' . getNotEncodedSiteUrl($site_info->domain, 'mid', $this->mid, 'document_srl', $this->document_srl));
+						header('location:' . getNotEncodedSiteUrl($site_module_info->domain, 'mid', $this->mid, 'document_srl', $this->document_srl));
 						return FALSE;
 					}
 					else
@@ -306,13 +316,13 @@ class ModuleHandler extends Handler
 	function procModule()
 	{
 		$oModuleModel = getModel('module');
+		$display_mode = Mobile::isFromMobilePhone() ? 'mobile' : 'view';
 
 		// If error occurred while preparation, return a message instance
 		if($this->error)
 		{
 			$this->_setInputErrorToContext();
-			$type = Mobile::isFromMobilePhone() ? 'mobile' : 'view';
-			$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+			$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 			$oMessageObject->setError(-1);
 			$oMessageObject->setMessage($this->error);
 			$oMessageObject->dispMessage();
@@ -348,8 +358,7 @@ class ModuleHandler extends Handler
 			$this->httpStatusCode = '404';
 
 			$this->_setInputErrorToContext();
-			$type = Mobile::isFromMobilePhone() ? 'mobile' : 'view';
-			$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+			$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 			$oMessageObject->setError(-1);
 			$oMessageObject->setMessage($this->error);
 			$oMessageObject->dispMessage();
@@ -386,7 +395,7 @@ class ModuleHandler extends Handler
 			if(!in_array(strtoupper($_SERVER['REQUEST_METHOD']), $allowedMethodList))
 			{
 				$this->error = "msg_invalid_request";
-				$oMessageObject = ModuleHandler::getModuleInstance('message', 'view');
+				$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 				$oMessageObject->setError(-1);
 				$oMessageObject->setMessage($this->error);
 				$oMessageObject->dispMessage();
@@ -399,13 +408,24 @@ class ModuleHandler extends Handler
 			Mobile::setMobile(FALSE);
 		}
 
-		// Admin ip
 		$logged_info = Context::get('logged_info');
+
+		// check CSRF for POST actions
+		if($_SERVER['REQUEST_METHOD'] !== 'GET' && Context::isInstalled() && $this->act !== 'procFileUpload' && !checkCSRF()) {
+			$this->error = 'msg_invalid_request';
+			$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
+			$oMessageObject->setError(-1);
+			$oMessageObject->setMessage($this->error);
+			$oMessageObject->dispMessage();
+			return $oMessageObject;
+		}
+
+		// Admin ip
 		if($kind == 'admin' && $_SESSION['denied_admin'] == 'Y')
 		{
 			$this->_setInputErrorToContext();
 			$this->error = "msg_not_permitted_act";
-			$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+			$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 			$oMessageObject->setError(-1);
 			$oMessageObject->setMessage($this->error);
 			$oMessageObject->dispMessage();
@@ -435,8 +455,7 @@ class ModuleHandler extends Handler
 		if(!is_object($oModule))
 		{
 			$this->_setInputErrorToContext();
-			$type = Mobile::isFromMobilePhone() ? 'mobile' : 'view';
-			$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+			$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 			$oMessageObject->setError(-1);
 			$oMessageObject->setMessage($this->error);
 			$oMessageObject->dispMessage();
@@ -455,7 +474,7 @@ class ModuleHandler extends Handler
 			{
 				$this->_setInputErrorToContext();
 				$this->error = 'msg_invalid_request';
-				$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+				$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 				$oMessageObject->setError(-1);
 				$oMessageObject->setMessage($this->error);
 				$oMessageObject->dispMessage();
@@ -484,7 +503,7 @@ class ModuleHandler extends Handler
 				else
 				{
 					$this->error = 'msg_invalid_request';
-					$oMessageObject = ModuleHandler::getModuleInstance('message', 'view');
+					$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 					$oMessageObject->setError(-1);
 					$oMessageObject->setMessage($this->error);
 					$oMessageObject->dispMessage();
@@ -506,6 +525,34 @@ class ModuleHandler extends Handler
 				$tpl_path = $oModule->getTemplatePath();
 				$orig_module = $oModule;
 
+				$xml_info = $oModuleModel->getModuleActionXml($forward->module);
+
+				// SECISSUE also check foward act method
+				// check REQUEST_METHOD in controller
+				if($type == 'controller')
+				{
+					$allowedMethod = $xml_info->action->{$forward->act}->method;
+
+					if(!$allowedMethod)
+					{
+						$allowedMethodList[0] = 'POST';
+					}
+					else
+					{
+						$allowedMethodList = explode('|', strtoupper($allowedMethod));
+					}
+
+					if(!in_array(strtoupper($_SERVER['REQUEST_METHOD']), $allowedMethodList))
+					{
+						$this->error = "msg_invalid_request";
+						$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
+						$oMessageObject->setError(-1);
+						$oMessageObject->setMessage($this->error);
+						$oMessageObject->dispMessage();
+						return $oMessageObject;
+					}
+				}
+
 				if($type == "view" && Mobile::isFromMobilePhone())
 				{
 					$orig_type = "view";
@@ -526,9 +573,8 @@ class ModuleHandler extends Handler
 
 				if(!is_object($oModule))
 				{
-					$type = Mobile::isFromMobilePhone() ? 'mobile' : 'view';
 					$this->_setInputErrorToContext();
-					$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+					$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 					$oMessageObject->setError(-1);
 					$oMessageObject->setMessage('msg_module_is_not_exists');
 					$oMessageObject->dispMessage();
@@ -538,9 +584,6 @@ class ModuleHandler extends Handler
 					}
 					return $oMessageObject;
 				}
-
-				$xml_info = $oModuleModel->getModuleActionXml($forward->module);
-				$oMemberModel = getModel('member');
 
 				if($this->module == "admin" && $type == "view")
 				{
@@ -559,7 +602,7 @@ class ModuleHandler extends Handler
 						$this->_setInputErrorToContext();
 
 						$this->error = 'msg_is_not_administrator';
-						$oMessageObject = ModuleHandler::getModuleInstance('message', $type);
+						$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 						$oMessageObject->setError(-1);
 						$oMessageObject->setMessage($this->error);
 						$oMessageObject->dispMessage();
@@ -569,15 +612,28 @@ class ModuleHandler extends Handler
 				if($kind == 'admin')
 				{
 					$grant = $oModuleModel->getGrant($this->module_info, $logged_info);
-					if(!$grant->is_admin && !$grant->manager)
+					if(!$grant->manager)
 					{
 						$this->_setInputErrorToContext();
 						$this->error = 'msg_is_not_manager';
-						$oMessageObject = ModuleHandler::getModuleInstance('message', 'view');
+						$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
 						$oMessageObject->setError(-1);
 						$oMessageObject->setMessage($this->error);
 						$oMessageObject->dispMessage();
 						return $oMessageObject;
+					}
+					else
+					{
+						if(!$grant->is_admin && $this->module != $this->orig_module->module && $xml_info->permission->{$this->act} != 'manager')
+						{
+							$this->_setInputErrorToContext();
+							$this->error = 'msg_is_not_administrator';
+							$oMessageObject = ModuleHandler::getModuleInstance('message', $display_mode);
+							$oMessageObject->setError(-1);
+							$oMessageObject->setMessage($this->error);
+							$oMessageObject->dispMessage();
+							return $oMessageObject;
+						}
 					}
 				}
 			}
@@ -644,7 +700,8 @@ class ModuleHandler extends Handler
 				'dispEditorConfigPreview' => 1,
 				'dispLayoutPreviewWithModule' => 1
 		);
-		if($type == "view" && $this->module_info->use_mobile == "Y" && Mobile::isMobileCheckByAgent() && !isset($skipAct[Context::get('act')]))
+		$db_use_mobile = Mobile::isMobileEnabled();
+		if($type == "view" && $this->module_info->use_mobile == "Y" && Mobile::isMobileCheckByAgent() && !isset($skipAct[Context::get('act')]) && $db_use_mobile === true)
 		{
 			global $lang;
 			$header = '<style>div.xe_mobile{opacity:0.7;margin:1em 0;padding:.5em;background:#333;border:1px solid #666;border-left:0;border-right:0}p.xe_mobile{text-align:center;margin:1em 0}a.xe_mobile{color:#ff0;font-weight:bold;font-size:24px}@media only screen and (min-width:500px){a.xe_mobile{font-size:15px}}</style>';
@@ -1020,31 +1077,18 @@ class ModuleHandler extends Handler
 				ModuleHandler::_getModuleFilePath($module, $type, $kind, $class_path, $high_class_file, $class_file, $instance_name);
 			}
 
-			// Get base class name and load the file contains it
-			if(!class_exists($module, false))
+			// Check if the base class and instance class exist
+			if(!class_exists($module, true))
 			{
-				$high_class_file = sprintf('%s%s%s.class.php', _XE_PATH_, $class_path, $module);
-				if(!file_exists($high_class_file))
-				{
-					return NULL;
-				}
-				require_once($high_class_file);
+				return NULL;
 			}
-
-			// Get the name of the class file
-			if(!is_readable($class_file))
+			if(!class_exists($instance_name, true))
 			{
 				return NULL;
 			}
 
-			// Create an instance with eval function
-			require_once($class_file);
-			if(!class_exists($instance_name, false))
-			{
-				return NULL;
-			}
-			$tmp_fn = create_function('', "return new {$instance_name}();");
-			$oModule = $tmp_fn();
+			// Create an instance
+			$oModule = new $instance_name();
 			if(!is_object($oModule))
 			{
 				return NULL;
@@ -1137,6 +1181,13 @@ class ModuleHandler extends Handler
 		{
 			return new Object();
 		}
+		
+		//store before trigger call time
+		$before_trigger_time = NULL;
+		if(__LOG_SLOW_TRIGGER__> 0)
+		{
+			$before_trigger_time = microtime(true);
+		}
 
 		foreach($triggers as $item)
 		{
@@ -1151,7 +1202,19 @@ class ModuleHandler extends Handler
 				continue;
 			}
 
+			$before_each_trigger_time = microtime(true);
+
 			$output = $oModule->{$called_method}($obj);
+
+			$after_each_trigger_time = microtime(true);
+			$elapsed_time_trigger = $after_each_trigger_time - $before_each_trigger_time;
+
+			$slowlog = new stdClass;
+			$slowlog->caller = $trigger_name . '.' . $called_position;
+			$slowlog->called = $module . '.' . $called_method;
+			$slowlog->called_extension = $module;
+			if($trigger_name != 'XE.writeSlowlog') writeSlowlog('trigger', $elapsed_time_trigger, $slowlog);
+
 			if(is_object($output) && method_exists($output, 'toBool') && !$output->toBool())
 			{
 				return $output;

@@ -83,12 +83,19 @@ class documentAdminController extends document
 
 			unset($obj);
 			$obj = $oDocument->getObjectVars();
+
+			// ISSUE https://github.com/xpressengine/xe-core/issues/32
+			$args_doc_origin->document_srl = $document_srl;
+			$output_ori = executeQuery('document.getDocument', $args_doc_origin, array('content'));              
+			$obj->content = $output_ori->data->content;
+
 			// Move the attached file if the target module is different
 			if($module_srl != $obj->module_srl && $oDocument->hasUploadedFiles())
 			{
 				$oFileController = getController('file');
 
 				$files = $oDocument->getUploadedFiles();
+				$delete_file_srls = array();
 				if(is_array($files))
 				{
 					foreach($files as $val)
@@ -113,9 +120,10 @@ class documentAdminController extends document
 								$obj->content = str_replace('sid='.$val->sid, 'sid='.$inserted_file->get('sid'), $obj->content);
 							}
 						}
-						// Delete an existing file
-						$oFileController->deleteFile($val->file_srl);
+						$delete_file_srls[] = $val->file_srl;
 					}
+					// Delete an existing file
+					$oFileController->deleteFile($delete_file_srls);
 				}
 				// Set the all files to be valid
 				$oFileController->setFilesValid($obj->document_srl);
@@ -710,6 +718,81 @@ class documentAdminController extends document
 
 		$returnUrl = Context::get('success_return_url') ? Context::get('success_return_url') : getNotEncodedUrl('', 'module', 'admin', 'act', 'dispDocumentAdminAlias', 'document_srl', $document_srl);
 		return $this->setRedirectUrl($returnUrl, $output);
+	}
+
+	/**
+	  * @fn procDocumentAdminMoveToTrash
+	  * @brief move a document to trash.
+	  * @see documentModel::getDocumentMenu
+	  */
+	function procDocumentAdminMoveToTrash()
+	{
+		$document_srl = Context::get('document_srl');
+
+		$oDocumentModel = getModel('document');
+		$oDocumentController = getController('document');
+		$oDocument = $oDocumentModel->getDocument($document_srl, false, false);
+		if(!$oDocument->isGranted()) return $this->stop('msg_not_permitted');
+	
+		$oModuleModel = getModel('module');
+		$module_info = $oModuleModel->getModuleInfoByDocumentSrl($document_srl);
+
+		$args = new stdClass();
+		$args->description = $message_content;
+		$args->document_srl = $document_srl;
+
+		$oDocumentController->moveDocumentToTrash($args);
+
+		$returnUrl = Context::get('success_return_url');
+		if(!$returnUrl)	
+		{
+			$arrUrl = parse_url(Context::get('cur_url'));
+			$query = "";
+
+			if($arrUrl['query'])
+			{
+				parse_str($arrUrl['query'], $arrQuery);
+
+				// set query
+				if(isset($arrQuery['document_srl']))
+					unset($arrQuery['document_srl']);
+
+				$searchArgs = new stdClass;
+				foreach($arrQuery as $key=>$val)
+				{
+					$searchArgs->{$key} = $val;
+				}
+
+				if(!isset($searchArgs->sort_index))
+					$searchArgs->sort_index = $module_info->order_target;
+
+				foreach($module_info as $key=>$val)
+				{
+					if(!isset($searchArgs->{$key}))
+						$searchArgs->{$key} = $val;
+				}
+
+				$oDocumentModel = getModel('document');
+				$output = $oDocumentModel->getDocumentList($searchArgs, $module_info->except_notice, TRUE, array('document_srl'));
+
+				$cur_page = 1;
+				if(isset($arrQuery['page'])) {
+					$cur_page = (int)$arrQuery['page'];
+				}
+
+
+				if($cur_page>1 && count($output->data) == 0)
+					$arrQuery['page'] = $cur_page - 1;
+
+				$query = "?";
+				foreach($arrQuery as $key=>$val)
+					$query .= sprintf("%s=%s&", $key, $val);
+				$query = substr($query, 0, -1);
+			}
+			$returnUrl = $arrUrl['path'] . $query;
+		}
+
+		$this->add('redirect_url', $returnUrl);
 	}
 
 	/**

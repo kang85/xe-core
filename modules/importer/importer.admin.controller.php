@@ -937,6 +937,7 @@ class importerAdminController extends importer
 				$obj->last_update = base64_decode($xmlDoc->comment->update->body);
 				if(!$obj->last_update) $obj->last_update = $obj->regdate;
 				$obj->ipaddress = base64_decode($xmlDoc->comment->ipaddress->body);
+				$obj->status = base64_decode($xmlDoc->comment->status->body)==''?'1':base64_decode($xmlDoc->comment->status->body);
 				$obj->list_order = $obj->comment_srl*-1;
 				// Change content information (attachment)
 				if(count($files))
@@ -1008,9 +1009,9 @@ class importerAdminController extends importer
 		$started = false;
 		$buff = null;
 
+		$file_obj = new stdClass;
 		while(!feof($fp))
 		{
-			$file_obj = new stdClass;
 			$str = trim(fgets($fp, 1024));
 			// If it ends with </attaches>, break
 			if(trim($str) == '</attaches>') break;
@@ -1054,6 +1055,7 @@ class importerAdminController extends importer
 
 				if(file_exists($file_obj->file))
 				{
+					$random = new Password();
 					// Set upload path by checking if the attachement is an image or other kind of file
 					if(preg_match("/\.(jpe?g|gif|png|wm[va]|mpe?g|avi|swf|flv|mp[1-4]|as[fx]|wav|midi?|moo?v|qt|r[am]{1,2}|m4v)$/i", $file_obj->source_filename))
 					{
@@ -1064,7 +1066,7 @@ class importerAdminController extends importer
 						$path = sprintf("./files/attach/images/%s/%s", $module_srl, getNumberingPath($upload_target_srl, 3));
 
 						$ext = substr(strrchr($file_obj->source_filename,'.'),1);
-						$_filename = md5(crypt(rand(1000000, 900000), rand(0, 100))).'.'.$ext;
+						$_filename = $random->createSecureSalt(32, 'hex').'.'.$ext;
 						$filename  = $path.$_filename;
 
 						$idx = 1;
@@ -1079,7 +1081,7 @@ class importerAdminController extends importer
 					else
 					{
 						$path = sprintf("./files/attach/binaries/%s/%s", $module_srl, getNumberingPath($upload_target_srl,3));
-						$filename = $path.md5(crypt(rand(1000000,900000), rand(0,100)));
+						$filename = $path.$random->createSecureSalt(32, 'hex');
 						$file_obj->direct_download = 'N';
 					}
 					// Create a directory
@@ -1102,7 +1104,7 @@ class importerAdminController extends importer
 						$file_obj->file_size = filesize($filename);
 						$file_obj->comment = NULL;
 						$file_obj->member_srl = 0;
-						$file_obj->sid = md5(rand(rand(1111111,4444444),rand(4444445,9999999)));
+						$file_obj->sid = $random->createSecureSalt(32, 'hex');
 						$file_obj->isvalid = 'Y';
 						$output = executeQuery('file.insertFile', $file_obj);
 

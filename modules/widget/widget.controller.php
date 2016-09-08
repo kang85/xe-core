@@ -374,35 +374,61 @@ class widgetController extends widget
 			return $widget_content;
 		}
 
-		/**
-		 * Cache number and cache values are set so that the cache file should call
-		 */
-		FileHandler::makeDir($this->cache_path);
-		// Wanted cache file
-		$cache_file = sprintf('%s%d.%s.cache', $this->cache_path, $widget_sequence, $lang_type);
-		// If the file exists in the cache, the file validation
-		if(!$ignore_cache && file_exists($cache_file))
+		$oCacheHandler = CacheHandler::getInstance('template');
+		if($oCacheHandler->isSupport())
 		{
-			$filemtime = filemtime($cache_file);
-			// Should be modified compared to the time of the cache or in the future if creating more than widget.controller.php file a return value of the cache
-			if($filemtime + $widget_cache * 60 > $_SERVER['REQUEST_TIME'] && $filemtime > filemtime(_XE_PATH_.'modules/widget/widget.controller.php'))
-			{
-				$cache_body = FileHandler::readFile($cache_file);
-				$cache_body = preg_replace('@<\!--#Meta:@', '<!--Meta:', $cache_body);
+			$key = 'widget_cache:' . $widget_sequence;
 
-				return $cache_body;
+			$cache_body = $oCacheHandler->get($key);
+			$cache_body = preg_replace('@<\!--#Meta:@', '<!--Meta:', $cache_body);
+		}
+
+		if($cache_body)
+		{
+			return $cache_body;
+		}
+		else
+		{
+			/**
+			 * Cache number and cache values are set so that the cache file should call
+			 */
+			FileHandler::makeDir($this->cache_path);
+			// Wanted cache file
+			$cache_file = sprintf('%s%d.%s.cache', $this->cache_path, $widget_sequence, $lang_type);
+			// If the file exists in the cache, the file validation
+			if(!$ignore_cache && file_exists($cache_file))
+			{
+				$filemtime = filemtime($cache_file);
+				// Should be modified compared to the time of the cache or in the future if creating more than widget.controller.php file a return value of the cache
+				if($filemtime + $widget_cache * 60 > $_SERVER['REQUEST_TIME'] && $filemtime > filemtime(_XE_PATH_.'modules/widget/widget.controller.php'))
+				{
+					$cache_body = FileHandler::readFile($cache_file);
+					$cache_body = preg_replace('@<\!--#Meta:@', '<!--Meta:', $cache_body);
+
+					return $cache_body;
+				}
+			}
+			// cache update and cache renewal of the file mtime
+			if(!$oCacheHandler->isSupport())
+			{
+			touch($cache_file);
+			}
+
+			$oWidget = $this->getWidgetObject($widget);
+			if(!$oWidget || !method_exists($oWidget,'proc')) return;
+
+			$widget_content = $oWidget->proc($args);
+			$oModuleController = getController('module');
+			$oModuleController->replaceDefinedLangCode($widget_content);
+			if($oCacheHandler->isSupport())
+			{
+				$oCacheHandler->put($key, $widget_content, $widget_cache * 60);
+			}
+			else
+			{
+				FileHandler::writeFile($cache_file, $widget_content);
 			}
 		}
-		// cache update and cache renewal of the file mtime
-		touch($cache_file);
-
-		$oWidget = $this->getWidgetObject($widget);
-		if(!$oWidget || !method_exists($oWidget,'proc')) return;
-
-		$widget_content = $oWidget->proc($args);
-		$oModuleController = getController('module');
-		$oModuleController->replaceDefinedLangCode($widget_content);
-		FileHandler::writeFile($cache_file, $widget_content);
 
 		return $widget_content;
 	}
@@ -417,6 +443,7 @@ class widgetController extends widget
 	{
 		// Save for debug run-time widget
 		if(__DEBUG__==3) $start = getMicroTime();
+		$before = microtime(true);
 		// urldecode the value of args haejum
 		$object_vars = get_object_vars($args);
 		if(count($object_vars))
@@ -486,20 +513,20 @@ class widgetController extends widget
 					$oEditorController = getController('editor');
 					$body = $oEditorController->transComponent($body);
 
-					$widget_content_header = sprintf('<div %sstyle="overflow:hidden;%s"><div style="%s">', $args->id, $style,  $inner_style);
+					$widget_content_header = sprintf('<div class="xe_content xe-widget-wrapper ' . $args->css_class . '" %sstyle="%s"><div style="%s">', $args->id, $style,  $inner_style);
 					$widget_content_body = $body;
 					$widget_content_footer = '</div></div>';
 
 					break;
 					// If the widget box; it could
 				case 'widgetBox' :
-					$widget_content_header = sprintf('<div %sstyle="overflow:hidden;%s;"><div style="%s"><div>', $args->id, $style,  $inner_style);
+					$widget_content_header = sprintf('<div class="xe-widget-wrapper ' . $args->css_class . '" %sstyle="%s;"><div style="%s"><div>', $args->id, $style,  $inner_style);
 					$widget_content_body = $widgetbox_content;
 
 					break;
 					// If the General wijetil
 				default :
-					$widget_content_header = sprintf('<div %sstyle="overflow:hidden;%s">',$args->id,$style);
+					$widget_content_header = sprintf('<div class="xe-widget-wrapper ' . $args->css_class . '" %sstyle="%s">',$args->id,$style);
 					$widget_content_body = sprintf('<div style="*zoom:1;%s">%s</div>', $inner_style,$widget_content);
 					$widget_content_footer = '</div>';
 					break;
@@ -537,7 +564,7 @@ class widgetController extends widget
 					$oWidgetController = getController('widget');
 
 					$widget_content_header = sprintf(
-						'<div class="widgetOutput" widgetstyle="%s" style="%s" widget_padding_left="%s" widget_padding_right="%s" widget_padding_top="%s" widget_padding_bottom="%s" widget="widgetContent" document_srl="%d" %s>'.
+						'<div class="xe_content widgetOutput ' . $args->css_class . '" widgetstyle="%s" style="%s" widget_padding_left="%s" widget_padding_right="%s" widget_padding_top="%s" widget_padding_bottom="%s" widget="widgetContent" document_srl="%d" %s>'.
 						'<div class="widgetResize"></div>'.
 						'<div class="widgetResizeLeft"></div>'.
 						'<div class="widgetBorder">'.
@@ -571,7 +598,7 @@ class widgetController extends widget
 					}
 
 					$widget_content_header = sprintf(
-						'<div class="widgetOutput" widgetstyle="%s" widget="widgetBox" style="%s;" widget_padding_top="%s" widget_padding_right="%s" widget_padding_bottom="%s" widget_padding_left="%s" %s >'.
+						'<div class="widgetOutput ' . $args->css_class . '" widgetstyle="%s" widget="widgetBox" style="%s;" widget_padding_top="%s" widget_padding_right="%s" widget_padding_bottom="%s" widget_padding_left="%s" %s >'.
 						'<div class="widgetBoxResize"></div>'.
 						'<div class="widgetBoxResizeLeft"></div>'.
 						'<div class="widgetBoxBorder"><div class="nullWidget" style="%s">',$args->widgetstyle,$style, $widget_padding_top, $widget_padding_right, $widget_padding_bottom, $widget_padding_left,implode(' ',$attribute),$inner_style);
@@ -595,7 +622,7 @@ class widgetController extends widget
 						}
 					}
 
-					$widget_content_header = sprintf('<div class="widgetOutput" widgetstyle="%s" style="%s" widget_padding_top="%s" widget_padding_right="%s" widget_padding_bottom="%s" widget_padding_left="%s" widget="%s" %s >'.
+					$widget_content_header = sprintf('<div class="widgetOutput ' . $args->css_class . '" widgetstyle="%s" style="%s" widget_padding_top="%s" widget_padding_right="%s" widget_padding_bottom="%s" widget_padding_left="%s" widget="%s" %s >'.
 						'<div class="widgetResize"></div>'.
 						'<div class="widgetResizeLeft"></div>'.
 						'<div class="widgetBorder">',$args->widgetstyle,$style,
@@ -615,6 +642,17 @@ class widgetController extends widget
 		$output = $widget_content_header . $widget_content_body . $widget_content_footer;
 		// Debug widget creation time information added to the results
 		if(__DEBUG__==3) $GLOBALS['__widget_excute_elapsed__'] += getMicroTime() - $start;
+
+		$after = microtime(true);
+
+		$elapsed_time = $after - $before;
+
+		$slowlog = new stdClass;
+		$slowlog->caller = "widget.execute";
+		$slowlog->called = $widget;
+		$slowlog->called_extension = $widget;
+		writeSlowlog('widget', $elapsed_time, $slowlog);
+
 		// Return result
 		return $output;
 	}
@@ -708,8 +746,9 @@ class widgetController extends widget
 		{
 			$vars = new stdClass();
 		}
-		
+
 		$widget = $vars->selected_widget;
+		$vars->css_class = $request_vars->css_class;
 		$vars->widgetstyle = $request_vars->widgetstyle;
 
 		$vars->skin = trim($request_vars->skin);

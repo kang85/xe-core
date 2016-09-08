@@ -76,6 +76,13 @@ class commentModel extends comment
 		// call a trigger (after)
 		ModuleHandler::triggerCall('comment.getCommentMenu', 'after', $menu_list);
 
+		if($this->grant->manager){
+			$str_confirm = Context::getLang('confirm_move');
+			$url = sprintf("if(!confirm('%s')) return; var params = new Array(); params['comment_srl']='%s'; params['mid']=current_mid;params['cur_url']=current_url; exec_xml('comment', 'procCommentAdminMoveToTrash', params)", $str_confirm, $comment_srl);
+			$oCommentController->addCommentPopupMenu($url,'cmd_trash','','javascript');
+
+		}
+
 		// find a comment by IP matching if an administrator.
 		if($logged_info->is_admin == 'Y')
 		{
@@ -126,7 +133,7 @@ class commentModel extends comment
 	{
 		$args = new stdClass();
 		$args->comment_srl = $comment_srl;
-		$output = executeQuery('comment.getChildCommentCount', $args);
+		$output = executeQuery('comment.getChildCommentCount', $args, NULL, 'master');
 		return (int) $output->data->count;
 	}
 
@@ -139,7 +146,7 @@ class commentModel extends comment
 	{
 		$args = new stdClass();
 		$args->comment_srl = $comment_srl;
-		$output = executeQueryArray('comment.getChildComments', $args);
+		$output = executeQueryArray('comment.getChildComments', $args, NULL, 'master');
 		return $output->data;
 	}
 
@@ -248,7 +255,7 @@ class commentModel extends comment
 			$args->status = 1;
 		}
 
-		$output = executeQuery('comment.getCommentCount', $args);
+		$output = executeQuery('comment.getCommentCount', $args, NULL, 'master');
 		$total_count = $output->data->count;
 
 		return (int) $total_count;
@@ -378,6 +385,7 @@ class commentModel extends comment
 			$args->module_srl = $obj->module_srl;
 		}
 
+		$args->document_srl = $obj->document_srl;
 		$args->list_count = $obj->list_count;
 
 		if(strpos($args->module_srl, ",") === false)

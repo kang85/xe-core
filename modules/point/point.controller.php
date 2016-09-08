@@ -152,6 +152,7 @@ class pointController extends point
 		// If there are comment points, attempt to deduct
 		if($comment_point>0) return new Object();
 		// Get all the comments related to this post
+		$cp_args = new stdClass();
 		$cp_args->document_srl = $document_srl;
 		$output = executeQueryArray('point.getCommentUsers', $cp_args);
 		// Return if there is no object
@@ -419,10 +420,13 @@ class pointController extends point
 		// Get the defaul configurations of the Point Module
 		$config = $oModuleModel->getModuleConfig('point');
 		// When the requested points are negative, compared it with the current point
+		$_SESSION['banned_document'][$obj->document_srl] = false;
 		if($config->disable_read_document == 'Y' && $point < 0 && abs($point)>$cur_point)
 		{
-			$obj->add('content', sprintf(Context::getLang('msg_disallow_by_point'), abs($point), $cur_point));
-			return new Object();
+			$message = sprintf(Context::getLang('msg_disallow_by_point'), abs($point), $cur_point);
+			$obj->add('content', $message);
+			$_SESSION['banned_document'][$obj->document_srl] = true;
+			return new Object(-1, $message);
 		}
 		// If not logged in, pass
 		if(!$logged_info->member_srl) return new Object();
@@ -607,6 +611,7 @@ class pointController extends point
 				// Remove linkage group
 				if($del_group_list && count($del_group_list))
 				{
+					$del_group_args = new stdClass;
 					$del_group_args->member_srl = $member_srl;
 					$del_group_args->group_srl = implode(',', $del_group_list);
 					$del_group_output = executeQuery('point.deleteMemberGroup', $del_group_args);
@@ -614,6 +619,7 @@ class pointController extends point
 				// Grant a new group
 				foreach($new_group_list as $group_srl)
 				{
+					$new_group_args = new stdClass;
 					$new_group_args->member_srl = $member_srl;
 					$new_group_args->group_srl = $group_srl;
 					executeQuery('member.addMemberToGroup', $new_group_args);

@@ -236,7 +236,46 @@ function executeQueryArray($query_id, $args = NULL, $arg_columns = NULL)
 function getNextSequence()
 {
 	$oDB = DB::getInstance();
-	return $oDB->getNextSequence();
+	$seq = $oDB->getNextSequence();
+	setUserSequence($seq);
+	return $seq;
+}
+
+/**
+ * Set Sequence number to session
+ *
+ * @param int $seq sequence number
+ * @return void
+ */
+function setUserSequence($seq)
+{
+	$arr_seq = array();
+	if(isset($_SESSION['seq']))
+	{
+		$arr_seq = $_SESSION['seq'];
+	}
+	$arr_seq[] = $seq;
+	$_SESSION['seq'] = $arr_seq;
+}
+
+/**
+ * Check Sequence number grant
+ *
+ * @param int $seq sequence number
+ * @return boolean
+ */
+function checkUserSequence($seq)
+{
+	if(!isset($_SESSION['seq']))
+	{
+		return false;
+	}
+	if(!in_array($seq, $_SESSION['seq']))
+	{
+		return false;
+	}
+
+	return true;
 }
 
 /**
@@ -430,6 +469,18 @@ function getFullSiteUrl()
 		return substr($match[0], 0, -1) . $url;
 	}
 	return $url;
+}
+
+/**
+ * Return the exact url of the current page
+ *
+ * @return string
+ */
+function getCurrentPageUrl()
+{
+	$protocol = $_SERVER['HTTPS'] == 'on' ? 'https://' : 'http://';
+	$url = $protocol . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+	return htmlspecialchars($url, ENT_COMPAT, 'UTF-8', FALSE);
 }
 
 /**
@@ -685,22 +736,19 @@ function zdate($str, $format = 'Y-m-d H:i:s', $conversion = TRUE)
 		$month = (int) substr($str, 4, 2);
 		$day = (int) substr($str, 6, 2);
 
-		// leading zero?
-		$lz = create_function('$n', 'return ($n>9?"":"0").$n;');
-
 		$trans = array(
 			'Y' => $year,
-			'y' => $lz($year % 100),
-			'm' => $lz($month),
+			'y' => sprintf('%02d', $year % 100),
+			'm' => sprintf('%02d', $month),
 			'n' => $month,
-			'd' => $lz($day),
+			'd' => sprintf('%02d', $day),
 			'j' => $day,
 			'G' => $hour,
-			'H' => $lz($hour),
+			'H' => sprintf('%02d', $hour),
 			'g' => $hour % 12,
-			'h' => $lz($hour % 12),
-			'i' => $lz($min),
-			's' => $lz($sec),
+			'h' => sprintf('%02d', $hour % 12),
+			'i' => sprintf('%02d', $min),
+			's' => sprintf('%02d', $sec),
 			'M' => getMonthName($month),
 			'F' => getMonthName($month, FALSE)
 		);
@@ -776,7 +824,7 @@ function debugPrint($debug_output = NULL, $display_option = TRUE, $file = '_debu
 		}
 		$type = FirePHP::INFO;
 
-		$label = sprintf('[%s:%d] %s() (m:%s)', $file_name, $line_num, $function, FileHandler::filesize(memory_get_usage()));
+		$label = sprintf('[%s:%d] %s() (Memory usage: current=%s, peak=%s)', $file_name, $line_num, $function, FileHandler::filesize(memory_get_usage()), FileHandler::filesize(memory_get_peak_usage()));
 
 		// Check a FirePHP option
 		if($display_option === 'TABLE')
@@ -831,6 +879,83 @@ function debugPrint($debug_output = NULL, $display_option = TRUE, $file = '_debu
 
 		@file_put_contents($debug_file, implode(PHP_EOL, $print), FILE_APPEND|LOCK_EX);
 	}
+}
+
+/**
+ * @param string $type query, trigger
+ * @param float $elapsed_time
+ * @param object $obj
+ */
+function writeSlowlog($type, $elapsed_time, $obj)
+{
+	if(!__LOG_SLOW_TRIGGER__ && !__LOG_SLOW_ADDON__ && !__LOG_SLOW_WIDGET__ && !__LOG_SLOW_QUERY__) return;
+
+	static $log_filename = array(
+		'query' => 'files/_slowlog_query.php',
+		'trigger' => 'files/_slowlog_trigger.php',
+		'addon' => 'files/_slowlog_addon.php',
+		'widget' => 'files/_slowlog_widget.php'
+	);
+	$write_file = true;
+
+	$log_file = _XE_PATH_ . $log_filename[$type];
+
+	$buff = array();
+	$buff[] = '<?php exit(); ?>';
+	$buff[] = date('c');
+
+	if($type == 'trigger' && __LOG_SLOW_TRIGGER__ > 0 && $elapsed_time > __LOG_SLOW_TRIGGER__)
+	{
+		$buff[] = "\tCaller : " . $obj->caller;
+		$buff[] = "\tCalled : " . $obj->called;
+	}
+	else if($type == 'addon' && __LOG_SLOW_ADDON__ > 0 && $elapsed_time > __LOG_SLOW_ADDON__)
+	{
+		$buff[] = "\tAddon : " . $obj->called;
+		$buff[] = "\tCalled position : " . $obj->caller;
+	}
+	else if($type == 'widget' && __LOG_SLOW_WIDGET__ > 0 && $elapsed_time > __LOG_SLOW_WIDGET__)
+	{
+		$buff[] = "\tWidget : " . $obj->called;
+	}
+	else if($type == 'query' && __LOG_SLOW_QUERY__ > 0 && $elapsed_time > __LOG_SLOW_QUERY__)
+	{
+
+		$buff[] = $obj->query;
+		$buff[] = "\tQuery ID   : " . $obj->query_id;
+		$buff[] = "\tCaller     : " . $obj->caller;
+		$buff[] = "\tConnection : " . $obj->connection;
+	}
+	else
+	{
+		$write_file = false;
+	}
+
+	if($write_file)
+	{
+		$buff[] = sprintf("\t%0.6f sec", $elapsed_time);
+		$buff[] = PHP_EOL . PHP_EOL;
+		file_put_contents($log_file, implode(PHP_EOL, $buff), FILE_APPEND);
+	}
+
+	if($type != 'query')
+	{
+		$trigger_args = $obj;
+		$trigger_args->_log_type = $type;
+		$trigger_args->_elapsed_time = $elapsed_time;
+		ModuleHandler::triggerCall('XE.writeSlowlog', 'after', $trigger_args);
+	}
+}
+
+/**
+ * @param void
+ */
+function flushSlowlog()
+{
+	$trigger_args = new stdClass();
+	$trigger_args->_log_type = 'flush';
+	$trigger_args->_elapsed_time = 0;
+	ModuleHandler::triggerCall('XE.writeSlowlog', 'after', $trigger_args);
 }
 
 /**
@@ -985,8 +1110,22 @@ function removeHackTag($content)
 	 */
 	$content = preg_replace_callback('@<(/?)([a-z]+[0-9]?)((?>"[^"]*"|\'[^\']*\'|[^>])*?\b(?:on[a-z]+|data|style|background|href|(?:dyn|low)?src)\s*=[\s\S]*?)(/?)($|>|<)@i', 'removeSrcHack', $content);
 
-	// xmp tag ?뺤씤 �??�붽?
 	$content = checkXmpTag($content);
+	$content = blockWidgetCode($content);
+
+	return $content;
+}
+
+/**
+ * blocking widget code
+ *
+ * @param string $content Taget content
+ * @return string
+ **/
+function blockWidgetCode($content)
+{
+	$content = preg_replace('/(<(?:img|div)(?:[^>]*))(widget)(?:(=([^>]*?)>))/is', '$1blocked-widget$3', $content);
+
 	return $content;
 }
 
@@ -1061,7 +1200,7 @@ function removeSrcHack($match)
 				continue;
 			}
 
-			$val = preg_replace('/&#(?:x([a-fA-F0-9]+)|0*(\d+));/e', 'chr("\\1"?0x00\\1:\\2+0)', $m[3][$idx] . $m[4][$idx]);
+			$val = preg_replace_callback('/&#(?:x([a-fA-F0-9]+)|0*(\d+));/', function($n) {return chr($n[1] ? ('0x00' . $n[1]) : ($n[2] + 0)); }, $m[3][$idx] . $m[4][$idx]);
 			$val = preg_replace('/^\s+|[\t\n\r]+/', '', $val);
 
 			if(preg_match('/^[a-z]+script:/i', $val))
@@ -1070,6 +1209,24 @@ function removeSrcHack($match)
 			}
 
 			$attrs[$name] = $val;
+		}
+	}
+
+	$filter_arrts = array('style', 'src', 'href');
+
+	if($tag === 'object') array_push($filter_arrts, 'data');
+	if($tag === 'param') array_push($filter_arrts, 'value');
+
+	foreach($filter_arrts as $attr)
+	{
+		if(!isset($attrs[$attr])) continue;
+
+		$attr_value = rawurldecode($attrs[$attr]);
+		$attr_value = htmlspecialchars_decode($attr_value, ENT_COMPAT);
+		$attr_value = preg_replace('/\s+|[\t\n\r]+/', '', $attr_value);
+		if(preg_match('@(\?|&|;)(act=(\w+))@i', $attr_value, $m) && $m[3] !== 'procFileDownload')
+		{
+			unset($attrs[$attr]);
 		}
 	}
 
@@ -1286,7 +1443,7 @@ function detectUTF8($string, $return_convert = FALSE, $urldecode = TRUE)
 	}
 
 	$sample = iconv('utf-8', 'utf-8', $string);
-	$is_utf8 = (md5($sample) == md5($string));
+	$is_utf8 = (md5($sample) === md5($string));
 
 	if(!$urldecode)
 	{
@@ -1357,9 +1514,9 @@ function isCrawler($agent = NULL)
 		$agent = $_SERVER['HTTP_USER_AGENT'];
 	}
 
-	$check_agent = array('bot', 'spider', 'google', 'yahoo', 'daum', 'teoma', 'fish', 'hanrss', 'facebook');
+	$check_agent = array('bot', 'spider', 'spyder', 'crawl', 'http://', 'google', 'yahoo', 'slurp', 'yeti', 'daum', 'teoma', 'fish', 'hanrss', 'facebook', 'yandex', 'infoseek', 'askjeeves', 'stackrambler');
 	$check_ip = array(
-		'211.245.21.110-211.245.21.119' /* mixsh */
+		/*'211.245.21.110-211.245.21.119' mixsh is closed */
 	);
 
 	foreach($check_agent as $str)
@@ -1417,14 +1574,22 @@ function stripEmbedTagForAdmin(&$content, $writer_member_srl)
  */
 function requirePear()
 {
+	static $required = false;
+	if($required)
+	{
+		return;
+	}
+
 	if(version_compare(PHP_VERSION, "5.3.0") < 0)
 	{
-		set_include_path(_XE_PATH_ . "libs/PEAR");
+		set_include_path(_XE_PATH_ . "libs/PEAR" . PATH_SEPARATOR . get_include_path());
 	}
 	else
 	{
-		set_include_path(_XE_PATH_ . "libs/PEAR.1.9");
+		set_include_path(_XE_PATH_ . "libs/PEAR.1.9.5" . PATH_SEPARATOR . get_include_path());
 	}
+
+	$required = true;
 }
 
 function checkCSRF()
@@ -1434,15 +1599,25 @@ function checkCSRF()
 		return FALSE;
 	}
 
-	$defaultUrl = Context::getDefaultUrl();
-	$referer = parse_url($_SERVER["HTTP_REFERER"]);
+	$default_url = Context::getDefaultUrl();
+	$referer = $_SERVER["HTTP_REFERER"];
+
+	if(strpos($default_url, 'xn--') !== FALSE && strpos($referer, 'xn--') === FALSE)
+	{
+		require_once(_XE_PATH_ . 'libs/idna_convert/idna_convert.class.php');
+		$IDN = new idna_convert(array('idn_version' => 2008));
+		$referer = $IDN->encode($referer);
+	}
+
+	$default_url = parse_url($default_url);
+	$referer = parse_url($referer);
 
 	$oModuleModel = getModel('module');
 	$siteModuleInfo = $oModuleModel->getDefaultMid();
 
 	if($siteModuleInfo->site_srl == 0)
 	{
-		if(!strstr(strtolower($defaultUrl), strtolower($referer['host'])))
+		if($default_url['host'] !== $referer['host'])
 		{
 			return FALSE;
 		}
